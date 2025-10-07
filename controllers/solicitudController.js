@@ -1,6 +1,6 @@
 // controllers/solicitudController.js
 import { sendEmail, buildApprovalEmailBody, updateSolicitudStatus } from '../services/emailService.js';
-import { supabase } from '../supabaseCliente.js'; // Necesario para consultas directas si fuera el caso
+import supabase from '../supabaseCliente.js'; // Necesario para consultas directas si fuera el caso
 
 /**
  * POST /api/solicitudes/notificar

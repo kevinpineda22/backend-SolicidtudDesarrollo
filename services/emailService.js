@@ -1,7 +1,7 @@
 // services/emailService.js
 
 import nodemailer from "nodemailer";
-import { supabase } from '../supabaseCliente.js';
+import supabase from '../supabaseCliente.js';
 import 'dotenv/config'; 
 
 // Configuración del Transporter usando tus variables de entorno existentes
