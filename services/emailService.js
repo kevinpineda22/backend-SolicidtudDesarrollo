@@ -46,9 +46,18 @@ export const buildApprovalEmailBody = (solicitud, baseURL) => {
         reject: `${baseURL}/api/solicitudes/approve?code=${code}&action=reject`
     };
 
-    // Construcción de la lista de adjuntos
-    // Nota: El frontend nos manda los adjuntos como un string JSON
-    const filesArray = JSON.parse(solicitud.archivos_adjuntos || '[]');
+    // 💡 CORRECCIÓN CRÍTICA AQUÍ: Garantizar que la cadena a parsear no sea null/undefined o vacía.
+    const filesString = solicitud.archivos_adjuntos || '[]'; 
+    
+    // Intentamos parsear la cadena JSON. Si falla, usamos un array vacío.
+    let filesArray;
+    try {
+        filesArray = JSON.parse(filesString);
+    } catch (e) {
+        console.error("Error parsing archivos_adjuntos JSON:", e);
+        filesArray = [];
+    }
+    
     const filesList = filesArray.length > 0
         ? filesArray.map(f => `<li><a href="${f.url}" target="_blank">${f.nombre}</a></li>`).join('')
         : '<li>No se adjuntaron archivos.</li>';
