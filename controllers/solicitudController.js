@@ -108,10 +108,12 @@ export const getDashboardData = async (req, res) => {
 export const updateSolicitudField = async (req, res) => {
     const { codigo_requerimiento, campo, valor } = req.body;
 
-    // Prepara el payload de actualización
-    const updatePayload = { [campo]: valor };
+    // 💡 SANIDAD: Asegura que el valor vacío sea NULL para la DB
+    const cleanValor = valor === '' ? null : valor;
 
-    // Añade la fecha de inicio de análisis si el campo es estado
+    const updatePayload = { [campo]: cleanValor };
+
+    // Lógica para registrar fechas clave
     if (campo === 'estado' && valor === 'En Análisis') {
         updatePayload.fecha_inicio_analisis = new Date().toISOString();
     }
@@ -132,13 +134,16 @@ export const updateSolicitudField = async (req, res) => {
 
 // 3. AGREGAR UNA NUEVA TAREA KANBAN
 export const addKanbanTask = async (req, res) => {
-    // 💡 AÑADIMOS la desestructuración de 'descripcion' y otros campos opcionales
+    // 💡 SANIDAD: Desestructuramos todos los campos y los limpiamos de strings vacíos
     const { 
-        solicitud_codigo, nombre_actividad, descripcion, 
-        responsable_ds, prioridad, fecha_limite
+        solicitud_codigo: rawSolicitud, nombre_actividad, descripcion, 
+        responsable_ds: rawResponsable, prioridad, fecha_limite: rawFechaLimite
     } = req.body;
 
-    const code = solicitud_codigo && solicitud_codigo.trim() !== '' ? solicitud_codigo.trim() : null;
+    const code = rawSolicitud && rawSolicitud.trim() !== '' ? rawSolicitud.trim() : null;
+    const responsable = rawResponsable && rawResponsable.trim() !== '' ? rawResponsable.trim() : null;
+    const fechaLimite = rawFechaLimite && rawFechaLimite.trim() !== '' ? rawFechaLimite.trim() : null;
+
 
     if (!nombre_actividad) {
          return res.status(400).json({ success: false, message: 'El nombre de la actividad es obligatorio.' });
@@ -150,10 +155,10 @@ export const addKanbanTask = async (req, res) => {
             .insert([{
                 solicitud_codigo: code,
                 nombre_actividad,
-                descripcion: descripcion, // 💡 CAMBIO CRÍTICO: Incluimos la descripción
-                responsable_ds,
-                prioridad: prioridad || 'Media', // Usamos la prioridad del formulario
-                fecha_limite: fecha_limite || null, // Usamos la fecha límite
+                descripcion: descripcion || null, // Permite NULL si el frontend no envía descripción
+                responsable_ds: responsable,
+                prioridad: prioridad || 'Media',
+                fecha_limite: fechaLimite, // Ahora será NULL si estaba vacío
                 estado_actividad: 'Por Hacer' 
             }])
             .select();
@@ -166,26 +171,32 @@ export const addKanbanTask = async (req, res) => {
     }
 };
 
-// 4. ACTUALIZAR EL ESTADO Y DATOS DE UNA TAREA KANBAN (PUT /api/actividades/update-status)
-export const updateKanbanTaskStatus = async (req, res) => { // Renombrar mentalmente a updateKanbanTask
-    const { taskId, newStatus, ...restOfUpdates } = req.body;
+// 4. ACTUALIZAR ESTADO/DATOS DE TAREA KANBAN (DND y Modal de Detalle)
+export const updateKanbanTaskStatus = async (req, res) => {
+    const { 
+        taskId, newStatus, nombre_actividad, descripcion, 
+        responsable_ds, prioridad, fecha_limite
+    } = req.body;
 
-    // 1. Sanidad de datos y preparación del payload
+    // 1. Prepara el payload con sanidad para los campos opcionales/fechas
     const updatePayload = {};
 
-    // Si viene un nuevo estado (DND), se añade al payload
+    // DND: Actualización de Estado (si se proporciona)
     if (newStatus) {
         updatePayload.estado_actividad = newStatus;
     }
+    
+    // 💡 EDICIÓN: Actualización de campos (solo si existen en el body)
+    if (nombre_actividad !== undefined) updatePayload.nombre_actividad = nombre_actividad || null;
+    if (descripcion !== undefined) updatePayload.descripcion = descripcion || null;
+    if (responsable_ds !== undefined) updatePayload.responsable_ds = responsable_ds || null;
+    if (prioridad !== undefined) updatePayload.prioridad = prioridad;
+    
+    // 💡 CORRECCIÓN CRÍTICA PARA FECHAS
+    if (fecha_limite !== undefined) {
+        updatePayload.fecha_limite = fecha_limite || null;
+    }
 
-    // 💡 Añadimos TODOS los campos del formulario de edición al payload
-    if (restOfUpdates.nombre_actividad !== undefined) updatePayload.nombre_actividad = restOfUpdates.nombre_actividad;
-    if (restOfUpdates.descripcion !== undefined) updatePayload.descripcion = restOfUpdates.descripcion;
-    if (restOfUpdates.responsable_ds !== undefined) updatePayload.responsable_ds = restOfUpdates.responsable_ds;
-    if (restOfUpdates.prioridad !== undefined) updatePayload.prioridad = restOfUpdates.prioridad;
-    if (restOfUpdates.fecha_limite !== undefined) updatePayload.fecha_limite = restOfUpdates.fecha_limite; // Usamos el nombre de columna de la DB
-
-    // Verificación de Payload
     if (Object.keys(updatePayload).length === 0) {
         return res.status(400).json({ success: false, message: 'No se proporcionaron campos válidos para actualizar.' });
     }
@@ -194,7 +205,7 @@ export const updateKanbanTaskStatus = async (req, res) => { // Renombrar mentalm
         const { error } = await supabase
             .from('actividades_ds')
             .update(updatePayload)
-            .eq('id', taskId); // Asegúrate de que el 'taskId' sea el ID de tipo BIGINT de la DB
+            .eq('id', taskId);
 
         if (error) throw error;
         res.status(200).json({ success: true, message: 'Tarea Kanban actualizada.' });
