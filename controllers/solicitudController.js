@@ -78,3 +78,95 @@ export const aprobarRechazarSolicitud = async (req, res) => {
         `);
     }
 };
+
+// 1. OBTENER TODOS LOS DATOS PARA EL DASHBOARD
+export const getDashboardData = async (req, res) => {
+    try {
+        const { data: solicitudes, error: reqError } = await supabase
+            .from('solicitudes_desarrollo')
+            // Aseguramos que se seleccionan todas las columnas de gestión
+            .select('*, responsable_asignado, prioridad_asignada, observaciones_ds') 
+            .order('fecha_creacion', { ascending: false });
+
+        if (reqError) throw reqError;
+
+        const { data: actividades, error: actError } = await supabase
+            .from('actividades_ds')
+            .select('*')
+            .order('fecha_creacion', { ascending: true });
+
+        if (actError) throw actError;
+
+        res.status(200).json({ solicitudes, actividades });
+    } catch (error) {
+        console.error('Error al obtener datos del dashboard:', error);
+        res.status(500).json({ success: false, message: 'Fallo al cargar datos del dashboard.', error: error.message });
+    }
+};
+
+// 2. ACTUALIZAR CUALQUIER CAMPO DE UNA SOLICITUD
+export const updateSolicitudField = async (req, res) => {
+    const { codigo_requerimiento, campo, valor } = req.body;
+
+    // Prepara el payload de actualización
+    const updatePayload = { [campo]: valor };
+
+    // Añade la fecha de inicio de análisis si el campo es estado
+    if (campo === 'estado' && valor === 'En Análisis') {
+        updatePayload.fecha_inicio_analisis = new Date().toISOString();
+    }
+
+    try {
+        const { error } = await supabase
+            .from('solicitudes_desarrollo')
+            .update(updatePayload)
+            .eq('codigo_requerimiento', codigo_requerimiento);
+
+        if (error) throw error;
+        res.status(200).json({ success: true, message: `${campo} actualizado correctamente.` });
+    } catch (error) {
+        console.error(`Error al actualizar campo ${campo}:`, error);
+        res.status(500).json({ success: false, message: `Fallo al actualizar el campo ${campo}.`, error: error.message });
+    }
+};
+
+// 3. AGREGAR UNA NUEVA TAREA KANBAN
+export const addKanbanTask = async (req, res) => {
+    const { solicitud_codigo, nombre_actividad, responsable_ds } = req.body;
+
+    try {
+        const { data, error } = await supabase
+            .from('actividades_ds')
+            .insert([{
+                solicitud_codigo,
+                nombre_actividad,
+                responsable_ds,
+                estado_actividad: 'Por Hacer' // Siempre inicia en Por Hacer
+            }])
+            .select();
+
+        if (error) throw error;
+        res.status(201).json({ success: true, message: 'Tarea Kanban agregada.', data: data[0] });
+    } catch (error) {
+        console.error('Error al agregar tarea Kanban:', error);
+        res.status(500).json({ success: false, message: 'Fallo al agregar tarea.', error: error.message });
+    }
+};
+
+// 4. ACTUALIZAR EL ESTADO DE UNA TAREA KANBAN (DRAG AND DROP)
+export const updateKanbanTaskStatus = async (req, res) => {
+    const { taskId, newStatus } = req.body;
+
+    try {
+        const { error } = await supabase
+            .from('actividades_ds')
+            .update({ estado_actividad: newStatus })
+            .eq('id', taskId);
+
+        if (error) throw error;
+        res.status(200).json({ success: true, message: 'Estado de tarea Kanban actualizado.' });
+    } catch (error) {
+        console.error('Error al actualizar estado de tarea Kanban:', error);
+        res.status(500).json({ success: false, message: 'Fallo al actualizar estado de tarea.', error: error.message });
+    }
+};
