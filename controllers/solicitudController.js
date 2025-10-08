@@ -202,15 +202,124 @@ export const updateKanbanTaskStatus = async (req, res) => {
     }
 
     try {
-        const { error } = await supabase
+        // Actualizar la tarea
+        const { data: updatedTask, error } = await supabase
             .from('actividades_ds')
             .update(updatePayload)
-            .eq('id', taskId);
+            .eq('id', taskId)
+            .select('solicitud_codigo, estado_actividad')
+            .single();
 
         if (error) throw error;
+
+        // 🔄 NUEVA LÓGICA: Sincronización automática con solicitudes
+        if (newStatus && updatedTask.solicitud_codigo) {
+            await syncTaskWithSolicitud(updatedTask.solicitud_codigo, newStatus);
+        }
+
         res.status(200).json({ success: true, message: 'Tarea Kanban actualizada.' });
     } catch (error) {
         console.error('Error al actualizar tarea Kanban:', error);
         res.status(500).json({ success: false, message: 'Fallo al actualizar tarea.', error: error.message });
+    }
+};
+
+// 🆕 NUEVA FUNCIÓN: Sincronización entre tareas y solicitudes
+const syncTaskWithSolicitud = async (solicitudCodigo, taskStatus) => {
+    try {
+        // Obtener todas las tareas asociadas a esta solicitud
+        const { data: allTasks, error: tasksError } = await supabase
+            .from('actividades_ds')
+            .select('estado_actividad')
+            .eq('solicitud_codigo', solicitudCodigo);
+
+        if (tasksError) throw tasksError;
+
+        // Determinar el nuevo estado de la solicitud basado en las tareas
+        let newSolicitudStatus = null;
+
+        if (allTasks && allTasks.length > 0) {
+            const taskStatuses = allTasks.map(t => t.estado_actividad);
+            
+            // Si todas las tareas están terminadas -> Completado
+            if (taskStatuses.every(status => status === 'Terminado')) {
+                newSolicitudStatus = 'Completado';
+            }
+            // Si al menos una tarea está en curso o revisión -> En Desarrollo (Activo)
+            else if (taskStatuses.some(status => ['En Curso', 'Revisión'].includes(status))) {
+                newSolicitudStatus = 'En Desarrollo (Activo)';
+            }
+            // Si hay tareas por hacer pero ninguna activa -> En Desarrollo (Backlog)
+            else if (taskStatuses.some(status => status === 'Por Hacer')) {
+                newSolicitudStatus = 'En Desarrollo (Backlog)';
+            }
+        }
+
+        // Solo actualizar si hay un cambio de estado necesario
+        if (newSolicitudStatus) {
+            const { error: updateError } = await supabase
+                .from('solicitudes_desarrollo')
+                .update({ 
+                    estado: newSolicitudStatus,
+                    fecha_ultima_actualizacion: new Date().toISOString()
+                })
+                .eq('codigo_requerimiento', solicitudCodigo);
+
+            if (updateError) throw updateError;
+            
+            console.log(`✅ Solicitud ${solicitudCodigo} sincronizada a estado: ${newSolicitudStatus}`);
+        }
+
+    } catch (error) {
+        console.error('Error en sincronización:', error);
+        // No lanzamos el error para que no afecte la actualización principal de la tarea
+    }
+};
+
+// 🆕 NUEVA FUNCIÓN: API para obtener estadísticas de progreso
+export const getSolicitudProgress = async (req, res) => {
+    const { codigo_requerimiento } = req.params;
+
+    try {
+        // Obtener la solicitud
+        const { data: solicitud, error: reqError } = await supabase
+            .from('solicitudes_desarrollo')
+            .select('*')
+            .eq('codigo_requerimiento', codigo_requerimiento)
+            .single();
+
+        if (reqError) throw reqError;
+
+        // Obtener todas las tareas asociadas
+        const { data: tasks, error: tasksError } = await supabase
+            .from('actividades_ds')
+            .select('estado_actividad, nombre_actividad, responsable_ds')
+            .eq('solicitud_codigo', codigo_requerimiento);
+
+        if (tasksError) throw tasksError;
+
+        // Calcular estadísticas de progreso
+        const totalTasks = tasks.length;
+        const completedTasks = tasks.filter(t => t.estado_actividad === 'Terminado').length;
+        const inProgressTasks = tasks.filter(t => ['En Curso', 'Revisión'].includes(t.estado_actividad)).length;
+        const pendingTasks = tasks.filter(t => t.estado_actividad === 'Por Hacer').length;
+
+        const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+        res.status(200).json({
+            solicitud,
+            tasks,
+            stats: {
+                total: totalTasks,
+                completed: completedTasks,
+                inProgress: inProgressTasks,
+                pending: pendingTasks,
+                progressPercentage
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al obtener progreso:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener progreso', error: error.message });
     }
 };
