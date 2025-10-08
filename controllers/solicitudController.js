@@ -132,16 +132,24 @@ export const updateSolicitudField = async (req, res) => {
 
 // 3. AGREGAR UNA NUEVA TAREA KANBAN
 export const addKanbanTask = async (req, res) => {
+    // Aceptamos solicitud_codigo, pero permitimos que sea null o undefined
     const { solicitud_codigo, nombre_actividad, responsable_ds } = req.body;
+
+    // Sanidad: Si el código es una cadena vacía, lo convertimos a null para la DB
+    const code = solicitud_codigo && solicitud_codigo.trim() !== '' ? solicitud_codigo.trim() : null;
+
+    if (!nombre_actividad) {
+         return res.status(400).json({ success: false, message: 'El nombre de la actividad es obligatorio.' });
+    }
 
     try {
         const { data, error } = await supabase
             .from('actividades_ds')
             .insert([{
-                solicitud_codigo,
+                solicitud_codigo: code, // <-- Ahora puede ser NULL
                 nombre_actividad,
                 responsable_ds,
-                estado_actividad: 'Por Hacer' // Siempre inicia en Por Hacer
+                estado_actividad: 'Por Hacer'
             }])
             .select();
 
