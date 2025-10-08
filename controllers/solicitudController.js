@@ -166,20 +166,40 @@ export const addKanbanTask = async (req, res) => {
     }
 };
 
-// 4. ACTUALIZAR EL ESTADO DE UNA TAREA KANBAN (DRAG AND DROP)
-export const updateKanbanTaskStatus = async (req, res) => {
-    const { taskId, newStatus } = req.body;
+// 4. ACTUALIZAR EL ESTADO Y DATOS DE UNA TAREA KANBAN (PUT /api/actividades/update-status)
+export const updateKanbanTaskStatus = async (req, res) => { // Renombrar mentalmente a updateKanbanTask
+    const { taskId, newStatus, ...restOfUpdates } = req.body;
+
+    // 1. Sanidad de datos y preparación del payload
+    const updatePayload = {};
+
+    // Si viene un nuevo estado (DND), se añade al payload
+    if (newStatus) {
+        updatePayload.estado_actividad = newStatus;
+    }
+
+    // 💡 Añadimos TODOS los campos del formulario de edición al payload
+    if (restOfUpdates.nombre_actividad !== undefined) updatePayload.nombre_actividad = restOfUpdates.nombre_actividad;
+    if (restOfUpdates.descripcion !== undefined) updatePayload.descripcion = restOfUpdates.descripcion;
+    if (restOfUpdates.responsable_ds !== undefined) updatePayload.responsable_ds = restOfUpdates.responsable_ds;
+    if (restOfUpdates.prioridad !== undefined) updatePayload.prioridad = restOfUpdates.prioridad;
+    if (restOfUpdates.fecha_limite !== undefined) updatePayload.fecha_limite = restOfUpdates.fecha_limite; // Usamos el nombre de columna de la DB
+
+    // Verificación de Payload
+    if (Object.keys(updatePayload).length === 0) {
+        return res.status(400).json({ success: false, message: 'No se proporcionaron campos válidos para actualizar.' });
+    }
 
     try {
         const { error } = await supabase
             .from('actividades_ds')
-            .update({ estado_actividad: newStatus })
-            .eq('id', taskId);
+            .update(updatePayload)
+            .eq('id', taskId); // Asegúrate de que el 'taskId' sea el ID de tipo BIGINT de la DB
 
         if (error) throw error;
-        res.status(200).json({ success: true, message: 'Estado de tarea Kanban actualizado.' });
+        res.status(200).json({ success: true, message: 'Tarea Kanban actualizada.' });
     } catch (error) {
-        console.error('Error al actualizar estado de tarea Kanban:', error);
-        res.status(500).json({ success: false, message: 'Fallo al actualizar estado de tarea.', error: error.message });
+        console.error('Error al actualizar tarea Kanban:', error);
+        res.status(500).json({ success: false, message: 'Fallo al actualizar tarea.', error: error.message });
     }
 };
