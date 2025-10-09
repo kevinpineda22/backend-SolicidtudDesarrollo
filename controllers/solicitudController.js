@@ -224,69 +224,76 @@ export const updateKanbanTaskStatus = async (req, res) => {
     }
 };
 
-// 🆕 NUEVA FUNCIÓN: Sincronización entre tareas y solicitudes
+// 🆕 FUNCIÓN SIMPLIFICADA: Sincronización con estados reducidos
 const syncTaskWithSolicitud = async (solicitudCodigo, taskStatus) => {
     try {
-        // Obtener todas las tareas asociadas a esta solicitud
+        // Obtener todas las tareas asociadas a esta solicitud con su tipo
         const { data: allTasks, error: tasksError } = await supabase
             .from('actividades_ds')
-            .select('estado_actividad')
+            .select('estado_actividad, tipo_tarea')
             .eq('solicitud_codigo', solicitudCodigo);
 
         if (tasksError) throw tasksError;
 
-        // Determinar el nuevo estado de la solicitud basado en las tareas
+        // Obtener estado actual de la solicitud
+        const { data: currentSolicitud, error: getCurrentError } = await supabase
+            .from('solicitudes_desarrollo')
+            .select('estado')
+            .eq('codigo_requerimiento', solicitudCodigo)
+            .single();
+
+        if (getCurrentError) throw getCurrentError;
+
         let newSolicitudStatus = null;
 
         if (allTasks && allTasks.length > 0) {
-            const taskStatuses = allTasks.map(t => t.estado_actividad);
+            // Separar tareas por tipo
+            const tareasPrincipales = allTasks.filter(t => t.tipo_tarea !== 'soporte' && t.tipo_tarea !== 'cambio');
+            const tareasSoporte = allTasks.filter(t => t.tipo_tarea === 'soporte' || t.tipo_tarea === 'cambio');
             
-            // Si todas las tareas están terminadas -> Completado
-            if (taskStatuses.every(status => status === 'Terminado')) {
-                newSolicitudStatus = 'Completado';
+            const principalStatuses = tareasPrincipales.map(t => t.estado_actividad);
+            const soporteStatuses = tareasSoporte.map(t => t.estado_actividad);
+            
+            // 🔑 LÓGICA SIMPLIFICADA DE ESTADOS
+            
+            // Si todas las tareas principales están terminadas
+            if (principalStatuses.length > 0 && principalStatuses.every(status => status === 'Terminado')) {
+                if (tareasSoporte.length > 0) {
+                    // Hay tareas de soporte
+                    if (soporteStatuses.some(status => ['En Curso', 'Revisión'].includes(status))) {
+                        newSolicitudStatus = 'En Soporte';
+                    } else if (soporteStatuses.every(status => status === 'Terminado')) {
+                        newSolicitudStatus = 'Completado';
+                    } else {
+                        newSolicitudStatus = 'En Soporte'; // Soporte pendiente
+                    }
+                } else {
+                    // Solo tareas principales, todas terminadas
+                    newSolicitudStatus = 'Completado';
+                }
             }
-            // Si al menos una tarea está en curso o revisión -> En Desarrollo (Activo)
-            else if (taskStatuses.some(status => ['En Curso', 'Revisión'].includes(status))) {
-                newSolicitudStatus = 'En Desarrollo (Activo)';
-            }
-            // Si hay tareas por hacer pero ninguna activa -> En Desarrollo (Backlog)
-            else if (taskStatuses.some(status => status === 'Por Hacer')) {
-                newSolicitudStatus = 'En Desarrollo (Backlog)';
+            // Si hay tareas principales activas
+            else if (principalStatuses.some(status => ['En Curso', 'Revisión', 'Por Hacer'].includes(status))) {
+                newSolicitudStatus = 'En Desarrollo';
             }
         }
 
         // Solo actualizar si hay un cambio de estado necesario
-        if (newSolicitudStatus) {
-            // Primero verificar el estado actual de la solicitud
-            const { data: currentSolicitud, error: getCurrentError } = await supabase
+        if (newSolicitudStatus && currentSolicitud.estado !== newSolicitudStatus) {
+            const { error: updateError } = await supabase
                 .from('solicitudes_desarrollo')
-                .select('estado')
-                .eq('codigo_requerimiento', solicitudCodigo)
-                .single();
+                .update({ 
+                    estado: newSolicitudStatus
+                })
+                .eq('codigo_requerimiento', solicitudCodigo);
 
-            if (getCurrentError) throw getCurrentError;
-
-            // Solo actualizar si el estado es diferente
-            if (currentSolicitud.estado !== newSolicitudStatus) {
-                const { error: updateError } = await supabase
-                    .from('solicitudes_desarrollo')
-                    .update({ 
-                        estado: newSolicitudStatus
-                        // Removido fecha_ultima_actualizacion ya que la columna no existe
-                    })
-                    .eq('codigo_requerimiento', solicitudCodigo);
-
-                if (updateError) throw updateError;
-                
-                console.log(`✅ Solicitud ${solicitudCodigo} sincronizada de "${currentSolicitud.estado}" a "${newSolicitudStatus}"`);
-            } else {
-                console.log(`ℹ️  Solicitud ${solicitudCodigo} ya está en estado "${newSolicitudStatus}", no se requiere actualización`);
-            }
+            if (updateError) throw updateError;
+            
+            console.log(`✅ Solicitud ${solicitudCodigo} sincronizada de "${currentSolicitud.estado}" a "${newSolicitudStatus}"`);
         }
 
     } catch (error) {
         console.error('Error en sincronización:', error);
-        // No lanzamos el error para que no afecte la actualización principal de la tarea
     }
 };
 
@@ -335,5 +342,53 @@ export const getSolicitudProgress = async (req, res) => {
     } catch (error) {
         console.error('Error al obtener progreso:', error);
         res.status(500).json({ success: false, message: 'Error al obtener progreso', error: error.message });
+    }
+};
+
+// 🆕 NUEVA FUNCIÓN: Eliminar tarea Kanban
+export const deleteKanbanTask = async (req, res) => {
+    const { taskId } = req.params;
+
+    if (!taskId) {
+        return res.status(400).json({ success: false, message: 'ID de tarea es obligatorio.' });
+    }
+
+    try {
+        // Primero obtener la tarea para logs y sincronización
+        const { data: taskToDelete, error: fetchError } = await supabase
+            .from('actividades_ds')
+            .select('solicitud_codigo, nombre_actividad')
+            .eq('id', taskId)
+            .single();
+
+        if (fetchError) throw fetchError;
+
+        // Eliminar la tarea
+        const { error: deleteError } = await supabase
+            .from('actividades_ds')
+            .delete()
+            .eq('id', taskId);
+
+        if (deleteError) throw deleteError;
+
+        // Si la tarea estaba asociada a una solicitud, re-sincronizar el estado
+        if (taskToDelete.solicitud_codigo) {
+            await syncTaskWithSolicitud(taskToDelete.solicitud_codigo, null);
+        }
+
+        console.log(`🗑️ Tarea eliminada: ${taskToDelete.nombre_actividad}`);
+        res.status(200).json({ 
+            success: true, 
+            message: 'Tarea eliminada exitosamente.',
+            deletedTask: taskToDelete
+        });
+
+    } catch (error) {
+        console.error('Error al eliminar tarea Kanban:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Fallo al eliminar tarea.', 
+            error: error.message 
+        });
     }
 };

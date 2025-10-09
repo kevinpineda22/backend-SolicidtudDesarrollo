@@ -3,7 +3,8 @@ import express from 'express';
 import { 
     notificarSolicitud, aprobarRechazarSolicitud, 
     getDashboardData, updateSolicitudField, 
-    addKanbanTask, updateKanbanTaskStatus, getSolicitudProgress
+    addKanbanTask, updateKanbanTaskStatus, getSolicitudProgress,
+    deleteKanbanTask // 🆕 NUEVA IMPORTACIÓN
 } from '../controllers/solicitudController.js';
 
 const router = express.Router();
@@ -29,5 +30,7 @@ router.post('/actividades/add', addKanbanTask);
 // 5. Actualizar el estado de una tarea Kanban (incluye sincronización automática)
 router.put('/actividades/update-status', updateKanbanTaskStatus);
 
+// 🆕 6. Eliminar una tarea Kanban
+router.delete('/actividades/:taskId', deleteKanbanTask);
 
 export default router;
