@@ -257,17 +257,31 @@ const syncTaskWithSolicitud = async (solicitudCodigo, taskStatus) => {
 
         // Solo actualizar si hay un cambio de estado necesario
         if (newSolicitudStatus) {
-            const { error: updateError } = await supabase
+            // Primero verificar el estado actual de la solicitud
+            const { data: currentSolicitud, error: getCurrentError } = await supabase
                 .from('solicitudes_desarrollo')
-                .update({ 
-                    estado: newSolicitudStatus,
-                    fecha_ultima_actualizacion: new Date().toISOString()
-                })
-                .eq('codigo_requerimiento', solicitudCodigo);
+                .select('estado')
+                .eq('codigo_requerimiento', solicitudCodigo)
+                .single();
 
-            if (updateError) throw updateError;
-            
-            console.log(`✅ Solicitud ${solicitudCodigo} sincronizada a estado: ${newSolicitudStatus}`);
+            if (getCurrentError) throw getCurrentError;
+
+            // Solo actualizar si el estado es diferente
+            if (currentSolicitud.estado !== newSolicitudStatus) {
+                const { error: updateError } = await supabase
+                    .from('solicitudes_desarrollo')
+                    .update({ 
+                        estado: newSolicitudStatus
+                        // Removido fecha_ultima_actualizacion ya que la columna no existe
+                    })
+                    .eq('codigo_requerimiento', solicitudCodigo);
+
+                if (updateError) throw updateError;
+                
+                console.log(`✅ Solicitud ${solicitudCodigo} sincronizada de "${currentSolicitud.estado}" a "${newSolicitudStatus}"`);
+            } else {
+                console.log(`ℹ️  Solicitud ${solicitudCodigo} ya está en estado "${newSolicitudStatus}", no se requiere actualización`);
+            }
         }
 
     } catch (error) {
