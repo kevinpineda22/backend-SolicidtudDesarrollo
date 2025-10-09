@@ -137,7 +137,8 @@ export const addKanbanTask = async (req, res) => {
     // 💡 SANIDAD: Desestructuramos todos los campos y los limpiamos de strings vacíos
     const { 
         solicitud_codigo: rawSolicitud, nombre_actividad, descripcion, 
-        responsable_ds: rawResponsable, prioridad, fecha_limite: rawFechaLimite
+        responsable_ds: rawResponsable, prioridad, fecha_limite: rawFechaLimite,
+        tipo_tarea // 🆕 AGREGAR ESTE CAMPO
     } = req.body;
 
     const code = rawSolicitud && rawSolicitud.trim() !== '' ? rawSolicitud.trim() : null;
@@ -155,11 +156,12 @@ export const addKanbanTask = async (req, res) => {
             .insert([{
                 solicitud_codigo: code,
                 nombre_actividad,
-                descripcion: descripcion || null, // Permite NULL si el frontend no envía descripción
+                descripcion: descripcion || null,
                 responsable_ds: responsable,
                 prioridad: prioridad || 'Media',
-                fecha_limite: fechaLimite, // Ahora será NULL si estaba vacío
-                estado_actividad: 'Por Hacer' 
+                fecha_limite: fechaLimite,
+                estado_actividad: 'Por Hacer',
+                tipo_tarea: tipo_tarea || 'desarrollo' // 🆕 INCLUIR EL TIPO DE TAREA
             }])
             .select();
 
