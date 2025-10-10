@@ -79,7 +79,7 @@ export const aprobarRechazarSolicitud = async (req, res) => {
     }
 };
 
-// 1. OBTENER TODOS LOS DATOS PARA EL DASHBOARD
+// 1. OBTENER TODOS LOS DATOS PARA EL DASHBOARD (ACTUALIZADO CON SPRINTS)
 export const getDashboardData = async (req, res) => {
     try {
         const { data: solicitudes, error: reqError } = await supabase
@@ -92,12 +92,33 @@ export const getDashboardData = async (req, res) => {
 
         const { data: actividades, error: actError } = await supabase
             .from('actividades_ds')
-            .select('*')
+            .select(`
+                *, 
+                sprint:sprints_desarrollo(id, nombre, estado)
+            `)
             .order('fecha_creacion', { ascending: true });
 
         if (actError) throw actError;
 
-        res.status(200).json({ solicitudes, actividades });
+        // 🆕 OBTENER SPRINTS
+        const { data: sprints, error: sprintsError } = await supabase
+            .from('sprints_desarrollo')
+            .select('*')
+            .order('fecha_creacion', { ascending: false });
+
+        if (sprintsError) throw sprintsError;
+
+        // Mapear actividades para incluir nombre del sprint
+        const actividadesConSprint = actividades.map(actividad => ({
+            ...actividad,
+            sprint_nombre: actividad.sprint?.nombre || null
+        }));
+
+        res.status(200).json({ 
+            solicitudes, 
+            actividades: actividadesConSprint,
+            sprints: sprints || []
+        });
     } catch (error) {
         console.error('Error al obtener datos del dashboard:', error);
         res.status(500).json({ success: false, message: 'Fallo al cargar datos del dashboard.', error: error.message });
@@ -132,19 +153,19 @@ export const updateSolicitudField = async (req, res) => {
     }
 };
 
-// 3. AGREGAR UNA NUEVA TAREA KANBAN
+// 3. AGREGAR UNA NUEVA TAREA KANBAN (ACTUALIZADO CON SPRINT)
 export const addKanbanTask = async (req, res) => {
     // 💡 SANIDAD: Desestructuramos todos los campos y los limpiamos de strings vacíos
     const { 
         solicitud_codigo: rawSolicitud, nombre_actividad, descripcion, 
         responsable_ds: rawResponsable, prioridad, fecha_limite: rawFechaLimite,
-        tipo_tarea // 🆕 AGREGAR ESTE CAMPO
+        tipo_tarea, sprint_id: rawSprintId // 🆕 AGREGAR CAMPO DE SPRINT
     } = req.body;
 
     const code = rawSolicitud && rawSolicitud.trim() !== '' ? rawSolicitud.trim() : null;
     const responsable = rawResponsable && rawResponsable.trim() !== '' ? rawResponsable.trim() : null;
     const fechaLimite = rawFechaLimite && rawFechaLimite.trim() !== '' ? rawFechaLimite.trim() : null;
-
+    const sprintId = rawSprintId && rawSprintId.trim() !== '' ? parseInt(rawSprintId.trim()) : null;
 
     if (!nombre_actividad) {
          return res.status(400).json({ success: false, message: 'El nombre de la actividad es obligatorio.' });
@@ -161,7 +182,8 @@ export const addKanbanTask = async (req, res) => {
                 prioridad: prioridad || 'Media',
                 fecha_limite: fechaLimite,
                 estado_actividad: 'Por Hacer',
-                tipo_tarea: tipo_tarea || 'desarrollo' // 🆕 INCLUIR EL TIPO DE TAREA
+                tipo_tarea: tipo_tarea || 'desarrollo',
+                sprint_id: sprintId // 🆕 INCLUIR EL SPRINT
             }])
             .select();
 
@@ -390,6 +412,304 @@ export const deleteKanbanTask = async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: 'Fallo al eliminar tarea.', 
+            error: error.message 
+        });
+    }
+};
+
+// 🆕 ==================== CONTROLADORES DE SPRINTS ====================
+
+// OBTENER TODOS LOS SPRINTS
+export const getAllSprints = async (req, res) => {
+    try {
+        const { data: sprints, error } = await supabase
+            .from('sprints_desarrollo')
+            .select(`
+                *,
+                tareas:actividades_ds(count)
+            `)
+            .order('fecha_creacion', { ascending: false });
+
+        if (error) throw error;
+
+        res.status(200).json({ 
+            success: true, 
+            sprints: sprints || []
+        });
+    } catch (error) {
+        console.error('Error al obtener sprints:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error al obtener sprints', 
+            error: error.message 
+        });
+    }
+};
+
+// OBTENER UN SPRINT ESPECÍFICO POR ID
+export const getSprintById = async (req, res) => {
+    const { sprintId } = req.params;
+
+    try {
+        const { data: sprint, error } = await supabase
+            .from('sprints_desarrollo')
+            .select(`
+                *,
+                tareas:actividades_ds(*)
+            `)
+            .eq('id', sprintId)
+            .single();
+
+        if (error) throw error;
+
+        if (!sprint) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Sprint no encontrado' 
+            });
+        }
+
+        res.status(200).json({ 
+            success: true, 
+            sprint 
+        });
+    } catch (error) {
+        console.error('Error al obtener sprint:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error al obtener sprint', 
+            error: error.message 
+        });
+    }
+};
+
+// CREAR UN NUEVO SPRINT
+export const createSprint = async (req, res) => {
+    const { 
+        nombre, 
+        objetivo, 
+        fecha_inicio, 
+        fecha_fin, 
+        estado = 'planificado' 
+    } = req.body;
+
+    // Validaciones básicas
+    if (!nombre || !fecha_inicio || !fecha_fin) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Nombre, fecha de inicio y fecha de fin son obligatorios.' 
+        });
+    }
+
+    // Validar que la fecha de fin sea posterior a la de inicio
+    if (new Date(fecha_fin) <= new Date(fecha_inicio)) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'La fecha de fin debe ser posterior a la fecha de inicio.' 
+        });
+    }
+
+    // Validar estados permitidos
+    const estadosPermitidos = ['planificado', 'activo', 'completado'];
+    if (!estadosPermitidos.includes(estado)) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Estado no válido. Debe ser: planificado, activo o completado.' 
+        });
+    }
+
+    try {
+        // Si se está creando un sprint activo, desactivar otros sprints activos
+        if (estado === 'activo') {
+            await supabase
+                .from('sprints_desarrollo')
+                .update({ estado: 'completado' })
+                .eq('estado', 'activo');
+        }
+
+        const { data, error } = await supabase
+            .from('sprints_desarrollo')
+            .insert([{
+                nombre: nombre.trim(),
+                objetivo: objetivo?.trim() || null,
+                fecha_inicio,
+                fecha_fin,
+                estado,
+                fecha_creacion: new Date().toISOString()
+            }])
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        res.status(201).json({ 
+            success: true, 
+            message: 'Sprint creado exitosamente.',
+            sprint: data
+        });
+    } catch (error) {
+        console.error('Error al crear sprint:', error);
+        
+        // Manejar errores específicos
+        if (error.code === '23505') { // Violación de restricción única
+            return res.status(409).json({ 
+                success: false, 
+                message: 'Ya existe un sprint con ese nombre.' 
+            });
+        }
+
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error al crear sprint', 
+            error: error.message 
+        });
+    }
+};
+
+// ACTUALIZAR UN SPRINT EXISTENTE
+export const updateSprint = async (req, res) => {
+    const { sprintId } = req.params;
+    const { 
+        nombre, 
+        objetivo, 
+        fecha_inicio, 
+        fecha_fin, 
+        estado 
+    } = req.body;
+
+    // Validar que el sprint existe
+    try {
+        const { data: existingSprint, error: checkError } = await supabase
+            .from('sprints_desarrollo')
+            .select('*')
+            .eq('id', sprintId)
+            .single();
+
+        if (checkError || !existingSprint) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Sprint no encontrado.' 
+            });
+        }
+
+        // Preparar datos de actualización
+        const updateData = {};
+        
+        if (nombre !== undefined) updateData.nombre = nombre.trim();
+        if (objetivo !== undefined) updateData.objetivo = objetivo?.trim() || null;
+        if (fecha_inicio !== undefined) updateData.fecha_inicio = fecha_inicio;
+        if (fecha_fin !== undefined) updateData.fecha_fin = fecha_fin;
+        if (estado !== undefined) {
+            // Validar estados permitidos
+            const estadosPermitidos = ['planificado', 'activo', 'completado'];
+            if (!estadosPermitidos.includes(estado)) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'Estado no válido. Debe ser: planificado, activo o completado.' 
+                });
+            }
+            updateData.estado = estado;
+        }
+
+        // Validar fechas si se proporcionan ambas
+        if (updateData.fecha_inicio && updateData.fecha_fin) {
+            if (new Date(updateData.fecha_fin) <= new Date(updateData.fecha_inicio)) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'La fecha de fin debe ser posterior a la fecha de inicio.' 
+                });
+            }
+        }
+
+        // Si se está cambiando a activo, desactivar otros sprints activos
+        if (updateData.estado === 'activo' && existingSprint.estado !== 'activo') {
+            await supabase
+                .from('sprints_desarrollo')
+                .update({ estado: 'completado' })
+                .eq('estado', 'activo')
+                .neq('id', sprintId);
+        }
+
+        // Actualizar el sprint
+        const { data, error } = await supabase
+            .from('sprints_desarrollo')
+            .update(updateData)
+            .eq('id', sprintId)
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        res.status(200).json({ 
+            success: true, 
+            message: 'Sprint actualizado exitosamente.',
+            sprint: data
+        });
+
+    } catch (error) {
+        console.error('Error al actualizar sprint:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error al actualizar sprint', 
+            error: error.message 
+        });
+    }
+};
+
+// ELIMINAR UN SPRINT (CON VALIDACIONES)
+export const deleteSprint = async (req, res) => {
+    const { sprintId } = req.params;
+
+    try {
+        // Verificar si el sprint existe
+        const { data: existingSprint, error: checkError } = await supabase
+            .from('sprints_desarrollo')
+            .select('*')
+            .eq('id', sprintId)
+            .single();
+
+        if (checkError || !existingSprint) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Sprint no encontrado.' 
+            });
+        }
+
+        // Verificar si hay tareas asociadas
+        const { data: associatedTasks, error: tasksError } = await supabase
+            .from('actividades_ds')
+            .select('id')
+            .eq('sprint_id', sprintId);
+
+        if (tasksError) throw tasksError;
+
+        if (associatedTasks && associatedTasks.length > 0) {
+            return res.status(409).json({ 
+                success: false, 
+                message: `No se puede eliminar el sprint. Tiene ${associatedTasks.length} tarea(s) asociada(s). Mueve las tareas a otro sprint o elimínalas primero.`,
+                associatedTasks: associatedTasks.length
+            });
+        }
+
+        // Eliminar el sprint
+        const { error: deleteError } = await supabase
+            .from('sprints_desarrollo')
+            .delete()
+            .eq('id', sprintId);
+
+        if (deleteError) throw deleteError;
+
+        res.status(200).json({ 
+            success: true, 
+            message: 'Sprint eliminado exitosamente.',
+            deletedSprint: existingSprint
+        });
+
+    } catch (error) {
+        console.error('Error al eliminar sprint:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error al eliminar sprint', 
             error: error.message 
         });
     }
