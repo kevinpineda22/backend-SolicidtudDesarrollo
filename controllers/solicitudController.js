@@ -162,35 +162,58 @@ export const addKanbanTask = async (req, res) => {
         tipo_tarea, sprint_id: rawSprintId // 🆕 AGREGAR CAMPO DE SPRINT
     } = req.body;
 
+    // 🔧 DEBUG: Agregar logs para ver qué está llegando
+    console.log('📋 Datos recibidos en addKanbanTask:');
+    console.log('- rawSprintId:', rawSprintId, 'Type:', typeof rawSprintId);
+    console.log('- Todos los datos del body:', req.body);
+
     const code = rawSolicitud && rawSolicitud.trim() !== '' ? rawSolicitud.trim() : null;
     const responsable = rawResponsable && rawResponsable.trim() !== '' ? rawResponsable.trim() : null;
     const fechaLimite = rawFechaLimite && rawFechaLimite.trim() !== '' ? rawFechaLimite.trim() : null;
-    const sprintId = rawSprintId && rawSprintId.trim() !== '' ? parseInt(rawSprintId.trim()) : null;
+    
+    // 🔧 CORRECCIÓN: Manejar correctamente sprint_id que puede ser número, string o null
+    let sprintId = null;
+    if (rawSprintId !== null && rawSprintId !== undefined && rawSprintId !== '') {
+        if (typeof rawSprintId === 'string') {
+            const trimmedSprintId = rawSprintId.trim();
+            sprintId = trimmedSprintId !== '' ? parseInt(trimmedSprintId) : null;
+        } else if (typeof rawSprintId === 'number') {
+            sprintId = rawSprintId;
+        }
+    }
+
+    console.log('✅ Sprint ID procesado:', sprintId, 'Type:', typeof sprintId);
 
     if (!nombre_actividad) {
          return res.status(400).json({ success: false, message: 'El nombre de la actividad es obligatorio.' });
     }
 
     try {
+        const insertData = {
+            solicitud_codigo: code,
+            nombre_actividad,
+            descripcion: descripcion || null,
+            responsable_ds: responsable,
+            prioridad: prioridad || 'Media',
+            fecha_limite: fechaLimite,
+            estado_actividad: 'Por Hacer',
+            tipo_tarea: tipo_tarea || 'desarrollo',
+            sprint_id: sprintId // 🆕 INCLUIR EL SPRINT
+        };
+
+        console.log('💾 Datos que se insertarán:', insertData);
+
         const { data, error } = await supabase
             .from('actividades_ds')
-            .insert([{
-                solicitud_codigo: code,
-                nombre_actividad,
-                descripcion: descripcion || null,
-                responsable_ds: responsable,
-                prioridad: prioridad || 'Media',
-                fecha_limite: fechaLimite,
-                estado_actividad: 'Por Hacer',
-                tipo_tarea: tipo_tarea || 'desarrollo',
-                sprint_id: sprintId // 🆕 INCLUIR EL SPRINT
-            }])
+            .insert([insertData])
             .select();
 
         if (error) throw error;
+        
+        console.log('✅ Tarea creada exitosamente:', data[0]);
         res.status(201).json({ success: true, message: 'Tarea Kanban agregada.', data: data[0] });
     } catch (error) {
-        console.error('Error al agregar tarea Kanban:', error);
+        console.error('❌ Error al agregar tarea Kanban:', error);
         res.status(500).json({ success: false, message: 'Fallo al agregar tarea.', error: error.message });
     }
 };
