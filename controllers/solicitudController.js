@@ -222,8 +222,13 @@ export const addKanbanTask = async (req, res) => {
 export const updateKanbanTaskStatus = async (req, res) => {
     const { 
         taskId, newStatus, nombre_actividad, descripcion, 
-        responsable_ds, prioridad, fecha_limite
+        responsable_ds, prioridad, fecha_limite, sprint_id // 🆕 AGREGAR SPRINT_ID
     } = req.body;
+
+    console.log('📥 Payload recibido en updateKanbanTaskStatus:', {
+        taskId, newStatus, nombre_actividad, descripcion, 
+        responsable_ds, prioridad, fecha_limite, sprint_id
+    });
 
     // 1. Prepara el payload con sanidad para los campos opcionales/fechas
     const updatePayload = {};
@@ -231,43 +236,97 @@ export const updateKanbanTaskStatus = async (req, res) => {
     // DND: Actualización de Estado (si se proporciona)
     if (newStatus) {
         updatePayload.estado_actividad = newStatus;
+        console.log('🔄 Actualizando estado a:', newStatus);
     }
     
     // 💡 EDICIÓN: Actualización de campos (solo si existen en el body)
-    if (nombre_actividad !== undefined) updatePayload.nombre_actividad = nombre_actividad || null;
-    if (descripcion !== undefined) updatePayload.descripcion = descripcion || null;
-    if (responsable_ds !== undefined) updatePayload.responsable_ds = responsable_ds || null;
-    if (prioridad !== undefined) updatePayload.prioridad = prioridad;
+    if (nombre_actividad !== undefined) {
+        updatePayload.nombre_actividad = nombre_actividad || null;
+        console.log('📝 Actualizando nombre:', nombre_actividad);
+    }
+    
+    if (descripcion !== undefined) {
+        updatePayload.descripcion = descripcion || null;
+        console.log('📄 Actualizando descripción:', descripcion);
+    }
+    
+    if (responsable_ds !== undefined) {
+        updatePayload.responsable_ds = responsable_ds || null;
+        console.log('👤 Actualizando responsable:', responsable_ds);
+    }
+    
+    if (prioridad !== undefined) {
+        updatePayload.prioridad = prioridad;
+        console.log('⚡ Actualizando prioridad:', prioridad);
+    }
     
     // 💡 CORRECCIÓN CRÍTICA PARA FECHAS
     if (fecha_limite !== undefined) {
         updatePayload.fecha_limite = fecha_limite || null;
+        console.log('📅 Actualizando fecha límite:', fecha_limite);
+    }
+
+    // 🔧 CORRECCIÓN CRÍTICA: MANEJO DEL SPRINT_ID EN EDICIÓN
+    if (sprint_id !== undefined) {
+        console.log('🏃‍♂️ Procesando sprint_id:', sprint_id, 'Type:', typeof sprint_id);
+        
+        // Si viene como null, string vacío, o número, manejarlo correctamente
+        let processedSprintId = null;
+        
+        if (sprint_id !== null && sprint_id !== undefined && sprint_id !== '') {
+            if (typeof sprint_id === 'string') {
+                const trimmed = sprint_id.trim();
+                processedSprintId = trimmed !== '' ? parseInt(trimmed) : null;
+            } else if (typeof sprint_id === 'number') {
+                processedSprintId = sprint_id;
+            }
+        }
+        
+        updatePayload.sprint_id = processedSprintId;
+        console.log('✅ Sprint ID procesado y asignado:', processedSprintId);
     }
 
     if (Object.keys(updatePayload).length === 0) {
+        console.log('❌ No hay campos para actualizar');
         return res.status(400).json({ success: false, message: 'No se proporcionaron campos válidos para actualizar.' });
     }
 
     try {
+        console.log('💾 Enviando payload a Supabase:', updatePayload);
+
         // Actualizar la tarea
         const { data: updatedTask, error } = await supabase
             .from('actividades_ds')
             .update(updatePayload)
             .eq('id', taskId)
-            .select('solicitud_codigo, estado_actividad')
+            .select('solicitud_codigo, estado_actividad, sprint_id, nombre_actividad')
             .single();
 
-        if (error) throw error;
+        if (error) {
+            console.error('❌ Error de Supabase:', error);
+            throw error;
+        }
+
+        console.log('✅ Tarea actualizada exitosamente:', updatedTask);
 
         // 🔄 NUEVA LÓGICA: Sincronización automática con solicitudes
         if (newStatus && updatedTask.solicitud_codigo) {
+            console.log('🔄 Sincronizando con solicitud:', updatedTask.solicitud_codigo);
             await syncTaskWithSolicitud(updatedTask.solicitud_codigo, newStatus);
         }
 
-        res.status(200).json({ success: true, message: 'Tarea Kanban actualizada.' });
+        res.status(200).json({ 
+            success: true, 
+            message: 'Tarea Kanban actualizada exitosamente.',
+            data: updatedTask 
+        });
     } catch (error) {
-        console.error('Error al actualizar tarea Kanban:', error);
-        res.status(500).json({ success: false, message: 'Fallo al actualizar tarea.', error: error.message });
+        console.error('❌ Error al actualizar tarea Kanban:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Fallo al actualizar tarea.', 
+            error: error.message 
+        });
     }
 };
 
