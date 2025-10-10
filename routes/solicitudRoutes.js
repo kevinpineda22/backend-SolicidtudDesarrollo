@@ -5,6 +5,7 @@ import {
     getDashboardData, updateSolicitudField, 
     addKanbanTask, updateKanbanTaskStatus, getSolicitudProgress,
     deleteKanbanTask, // 🆕 NUEVA IMPORTACIÓN
+    toggleArchivarTarea, getArchivedTasks, // 🆕 IMPORTACIONES PARA ARCHIVADO
     // 🆕 IMPORTACIONES PARA SPRINTS
     createSprint, updateSprint, deleteSprint, getSprintById, getAllSprints
 } from '../controllers/solicitudController.js';
@@ -50,5 +51,9 @@ router.put('/sprints/:sprintId', updateSprint);
 
 // 11. Eliminar un sprint (opcional)
 router.delete('/sprints/:sprintId', deleteSprint);
+
+// 🆕 RUTAS DE ARCHIVADO
+router.get('/actividades/archivadas', getArchivedTasks);
+router.put('/actividades/:taskId/archivo', toggleArchivarTarea);
 
 export default router;

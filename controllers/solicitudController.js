@@ -796,3 +796,100 @@ export const deleteSprint = async (req, res) => {
         });
     }
 };
+
+// 🆕 NUEVA FUNCIÓN: Obtener tareas archivadas
+export const getArchivedTasks = async (req, res) => {
+    try {
+        const { data: tareasArchivadas, error } = await supabase
+            .from('actividades_ds')
+            .select(`
+                *, 
+                sprint:sprints_desarrollo(id, nombre, estado)
+            `)
+            .eq('archivado', true) // 🔑 Solo tareas ARCHIVADAS
+            .order('fecha_archivado', { ascending: false });
+
+        if (error) throw error;
+
+        const tareasConSprint = tareasArchivadas.map(tarea => ({
+            ...tarea,
+            sprint_nombre: tarea.sprint?.nombre || null
+        }));
+
+        res.status(200).json({ 
+            success: true, 
+            tareasArchivadas: tareasConSprint
+        });
+    } catch (error) {
+        console.error('Error al obtener tareas archivadas:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error al obtener tareas archivadas', 
+            error: error.message 
+        });
+    }
+};
+
+// 🆕 NUEVA FUNCIÓN: Archivar/Desarchivar tarea
+export const toggleArchivarTarea = async (req, res) => {
+    const { taskId } = req.params;
+    const { archivar = true } = req.body;
+
+    if (!taskId) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'ID de tarea es obligatorio.' 
+        });
+    }
+
+    try {
+        // Obtener la tarea actual
+        const { data: currentTask, error: fetchError } = await supabase
+            .from('actividades_ds')
+            .select('nombre_actividad, estado_actividad, archivado')
+            .eq('id', taskId)
+            .single();
+
+        if (fetchError) throw fetchError;
+
+        // Validar que solo se puedan archivar tareas terminadas
+        if (archivar && currentTask.estado_actividad !== 'Terminado') {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Solo se pueden archivar tareas que estén en estado "Terminado".' 
+            });
+        }
+
+        // Actualizar el estado de archivado
+        const updateData = {
+            archivado: archivar,
+            fecha_archivado: archivar ? new Date().toISOString() : null
+        };
+
+        const { data, error: updateError } = await supabase
+            .from('actividades_ds')
+            .update(updateData)
+            .eq('id', taskId)
+            .select()
+            .single();
+
+        if (updateError) throw updateError;
+
+        const action = archivar ? 'archivada' : 'desarchivada';
+        console.log(`📦 Tarea ${action}: ${currentTask.nombre_actividad}`);
+
+        res.status(200).json({ 
+            success: true, 
+            message: `Tarea ${action} exitosamente.`,
+            data: data
+        });
+
+    } catch (error) {
+        console.error('Error al cambiar estado de archivo:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error al procesar la solicitud', 
+            error: error.message 
+        });
+    }
+};
