@@ -54,11 +54,11 @@ export const notificarSolicitud = async (req, res) => {
         <p><strong>Prioridad:</strong> ${solicitud.prioridad}</p>
         <p>Por favor, revisa la solicitud y decide si aprobar o rechazar:</p>
         <p>
-          <a href="${baseURL}/api/solicitudes/aprobar-rechazar?code=${solicitud.codigo_requerimiento}&action=approve&token=${solicitud.token}" 
+          <a href="${baseURL}/api/solicitudes/approve?code=${solicitud.codigo_requerimiento}&action=approve&token=${solicitud.token}" 
              style="background-color: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">
             Aprobar
           </a>
-          <a href="${baseURL}/api/solicitudes/aprobar-rechazar?code=${solicitud.codigo_requerimiento}&action=reject&token=${solicitud.token}" 
+          <a href="${baseURL}/api/solicitudes/decision?code=${solicitud.codigo_requerimiento}&action=reject&token=${solicitud.token}" 
              style="background-color: #dc3545; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
             Rechazar
           </a>
