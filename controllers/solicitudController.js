@@ -16,6 +16,10 @@ export const notificarSolicitud = async (req, res) => {
   try {
     const baseURL = req.protocol + '://' + req.get('host');
 
+    // 🔧 CORRECCIÓN: Usar la columna archivos_adjuntos de la solicitud directamente
+    const archivos = solicitud.archivos_adjuntos || [];
+    console.log('📎 Archivos adjuntos encontrados:', archivos.length);
+
     // Correo al equipo de desarrollo (desarrollo@merkahorrosas.com)
     const developmentEmailBody = `
       <!DOCTYPE html>
@@ -110,18 +114,41 @@ export const notificarSolicitud = async (req, res) => {
                 </table>
               </div>
               
-              ${solicitud.archivos_adjuntos.length > 0 ? `
+              ${archivos.length > 0 ? `
                 <div style="margin-top: 20px;">
-                  <h3 style="color: #210d65; margin-bottom: 10px;">📎 Archivos Adjuntos:</h3>
+                  <h3 style="color: #210d65; margin-bottom: 10px;">📎 Archivos Adjuntos (${archivos.length}):</h3>
                   <ul style="list-style: none; padding: 0;">
-                    ${solicitud.archivos_adjuntos.map(file => `
-                      <li style="background-color: #f8f9fa; padding: 10px; margin: 5px 0; border-radius: 5px; border-left: 3px solid #89DC00;">
-                        <a href="${file.url}" style="color: #210d65; text-decoration: none; font-weight: 500;">📄 ${file.nombre}</a>
+                    ${archivos.map(archivo => `
+                      <li style="background-color: #f8f9fa; padding: 12px; margin: 8px 0; border-radius: 8px; border-left: 3px solid #89DC00; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                          <div>
+                            <a href="${archivo.url}" style="color: #210d65; text-decoration: none; font-weight: 600; font-size: 14px;">📄 ${archivo.nombre}</a>
+                            <div style="color: #6c757d; font-size: 12px; margin-top: 4px;">
+                              ${archivo.tamaño ? `Tamaño: ${(archivo.tamaño / 1024).toFixed(1)} KB` : ''} 
+                              ${archivo.tipo ? `| Tipo: ${archivo.tipo}` : ''}
+                            </div>
+                          </div>
+                          <a href="${archivo.url}" download="${archivo.nombre}" 
+                             style="background-color: #89DC00; color: white; padding: 6px 12px; border-radius: 4px; text-decoration: none; font-size: 12px; font-weight: bold;">
+                            Descargar
+                          </a>
+                        </div>
                       </li>
                     `).join('')}
                   </ul>
+                  <div style="background-color: #e7f3ff; padding: 10px; border-radius: 5px; border-left: 3px solid #007bff; margin-top: 10px;">
+                    <p style="margin: 0; color: #004085; font-size: 12px;">
+                      💡 <strong>Tip:</strong> Haz clic en "Descargar" para obtener una copia local de cada archivo.
+                    </p>
+                  </div>
                 </div>
-              ` : ''}
+              ` : `
+                <div style="margin-top: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border-left: 3px solid #6c757d;">
+                  <p style="margin: 0; color: #6c757d; font-style: italic;">
+                    📎 No se adjuntaron archivos con esta solicitud.
+                  </p>
+                </div>
+              `}
               
               <div style="margin-top: 25px; padding: 15px; background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px;">
                 <p style="margin: 0; color: #856404; font-weight: 500;">
@@ -227,18 +254,41 @@ export const notificarSolicitud = async (req, res) => {
                 </div>
               </div>
               
-              ${solicitud.archivos_adjuntos.length > 0 ? `
+              ${archivos.length > 0 ? `
                 <div style="margin-top: 20px;">
-                  <h3 style="color: #210d65; margin-bottom: 10px;">📎 Archivos Adjuntos:</h3>
+                  <h3 style="color: #210d65; margin-bottom: 10px;">📎 Archivos Adjuntos (${archivos.length}):</h3>
                   <ul style="list-style: none; padding: 0;">
-                    ${solicitud.archivos_adjuntos.map(file => `
-                      <li style="background-color: #f8f9fa; padding: 10px; margin: 5px 0; border-radius: 5px; border-left: 3px solid #89DC00;">
-                        <a href="${file.url}" style="color: #210d65; text-decoration: none; font-weight: 500;">📄 ${file.nombre}</a>
+                    ${archivos.map(archivo => `
+                      <li style="background-color: #f8f9fa; padding: 12px; margin: 8px 0; border-radius: 8px; border-left: 3px solid #89DC00; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                          <div>
+                            <a href="${archivo.url}" style="color: #210d65; text-decoration: none; font-weight: 600; font-size: 14px;">📄 ${archivo.nombre}</a>
+                            <div style="color: #6c757d; font-size: 12px; margin-top: 4px;">
+                              ${archivo.tamaño ? `Tamaño: ${(archivo.tamaño / 1024).toFixed(1)} KB` : ''} 
+                              ${archivo.tipo ? `| Tipo: ${archivo.tipo}` : ''}
+                            </div>
+                          </div>
+                          <a href="${archivo.url}" download="${archivo.nombre}" 
+                             style="background-color: #89DC00; color: white; padding: 6px 12px; border-radius: 4px; text-decoration: none; font-size: 12px; font-weight: bold;">
+                            Descargar
+                          </a>
+                        </div>
                       </li>
                     `).join('')}
                   </ul>
+                  <div style="background-color: #e7f3ff; padding: 10px; border-radius: 5px; border-left: 3px solid #007bff; margin-top: 10px;">
+                    <p style="margin: 0; color: #004085; font-size: 12px;">
+                      💡 <strong>Tip:</strong> Haz clic en "Descargar" para obtener una copia local de cada archivo.
+                    </p>
+                  </div>
                 </div>
-              ` : ''}
+              ` : `
+                <div style="margin-top: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border-left: 3px solid #6c757d;">
+                  <p style="margin: 0; color: #6c757d; font-style: italic;">
+                    📎 No se adjuntaron archivos con esta solicitud.
+                  </p>
+                </div>
+              `}
             </div>
             
             <!-- Footer -->
@@ -293,6 +343,19 @@ export const notificarSolicitud = async (req, res) => {
                     ${solicitud.codigo_requerimiento}
                   </p>
                 </div>
+
+                ${archivos.length > 0 ? `
+                  <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef; margin: 20px 0; text-align: left;">
+                    <h4 style="color: #210d65; margin: 0 0 10px 0;">📎 Archivos Adjuntados (${archivos.length}):</h4>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                      ${archivos.map(archivo => `
+                        <li style="padding: 5px 0; border-bottom: 1px solid #dee2e6; color: #495057; font-size: 14px;">
+                          📄 ${archivo.nombre} ${archivo.tamaño ? `<span style="color: #6c757d;">(${(archivo.tamaño / 1024).toFixed(1)} KB)</span>` : ''}
+                        </li>
+                      `).join('')}
+                    </ul>
+                  </div>
+                ` : ''}
                 
                 <div style="text-align: left; margin: 20px 0;">
                   <p style="color: #495057; margin: 10px 0; line-height: 1.6;">
@@ -354,6 +417,9 @@ export const procesarDecision = async (req, res) => {
     if (solicitud.estado !== 'Pendiente de Aprobación') {
       return res.status(400).json({ success: false, message: 'La solicitud ya ha sido procesada.' });
     }
+
+    // 🔧 CORRECCIÓN: Usar directamente los archivos de la solicitud
+    const archivos = solicitud.archivos_adjuntos || [];
 
     // 3. Actualizar el estado de la solicitud
     const { error: updateError } = await supabase
@@ -450,6 +516,20 @@ export const procesarDecision = async (req, res) => {
                   </tr>
                 </table>
               </div>
+
+              ${archivos.length > 0 ? `
+                <div style="margin-top: 20px;">
+                  <h3 style="color: #210d65; margin-bottom: 10px;">📎 Archivos de Referencia (${archivos.length}):</h3>
+                  <ul style="list-style: none; padding: 0;">
+                    ${archivos.map(archivo => `
+                      <li style="background-color: #f8f9fa; padding: 10px; margin: 5px 0; border-radius: 5px; border-left: 3px solid #89DC00;">
+                        <a href="${archivo.url}" style="color: #210d65; text-decoration: none; font-weight: 500;">📄 ${archivo.nombre}</a>
+                        ${archivo.tamaño ? `<span style="color: #6c757d; font-size: 12px; margin-left: 10px;">(${(archivo.tamaño / 1024).toFixed(1)} KB)</span>` : ''}
+                      </li>
+                    `).join('')}
+                  </ul>
+                </div>
+              ` : ''}
               
               ${isApproved ? `
                 <div style="background-color: #d1ecf1; padding: 15px; border-radius: 5px; border-left: 4px solid #bee5eb; margin-top: 20px;">
