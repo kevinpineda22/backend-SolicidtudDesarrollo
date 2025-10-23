@@ -7,7 +7,8 @@ import {
     deleteKanbanTask, // 🆕 NUEVA IMPORTACIÓN
     toggleArchivarTarea, getArchivedTasks, // 🆕 IMPORTACIONES PARA ARCHIVADO
     // 🆕 IMPORTACIONES PARA SPRINTS
-    createSprint, updateSprint, deleteSprint, getSprintById, getAllSprints
+    createSprint, updateSprint, deleteSprint, getSprintById, getAllSprints,
+    procesarDecision
 } from '../controllers/solicitudController.js';
 
 const router = express.Router();
@@ -15,6 +16,7 @@ const router = express.Router();
 // --- RUTAS DEL FLUJO INICIAL ---
 router.post('/solicitudes/notificar', notificarSolicitud);
 router.get('/solicitudes/approve', aprobarRechazarSolicitud); 
+router.post('/solicitudes/decision', procesarDecision); // Nueva ruta para procesar decisiones mediante POST
 
 // --- RUTAS DEL PANEL DE ADMINISTRACIÓN ---
 // 1. Obtener todos los datos necesarios para el Dashboard/Kanban (incluye sprints)

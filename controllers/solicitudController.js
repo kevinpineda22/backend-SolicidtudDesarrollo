@@ -7,41 +7,175 @@ import supabase from '../supabaseCliente.js'; // Necesario para consultas direct
  * Maneja la notificación al jefe y al equipo de desarrollo después de que el frontend inserta el registro.
  */
 export const notificarSolicitud = async (req, res) => {
-    const { solicitud, destinatarios } = req.body;
-    
-    try {
-        // La URL base es necesaria para construir los enlaces de aprobación dinámicamente
-        const baseURL = req.protocol + '://' + req.get('host');
+  const { solicitud, destinatarios } = req.body;
 
-        const approvalBody = buildApprovalEmailBody(solicitud, baseURL);
+  if (!solicitud || !solicitud.token || !solicitud.codigo_requerimiento) {
+    return res.status(400).json({ success: false, message: 'Faltan datos requeridos (solicitud, token o código).' });
+  }
 
-        // Enviar correo al jefe y al equipo de desarrollo
-        const emailResult = await sendEmail(
-            destinatarios.join(', '), 
-            `[DS] Aprobación Requerida: ${solicitud.codigo_requerimiento}`,
-            approvalBody
-        );
+  try {
+    const baseURL = req.protocol + '://' + req.get('host');
 
-        if (!emailResult.success) {
-             // Devolvemos 500 ya que la notificación es crítica para el flujo
-             return res.status(500).json({ success: false, message: 'Fallo al enviar el correo de notificación al jefe.' });
-        }
-        
-        // Opcional: Notificación simple al solicitante (confirmación)
-        await sendEmail(
-            solicitud.correo_electronico,
-            `[DS] Confirmación de Envío: ${solicitud.codigo_requerimiento}`,
-            `<p>Tu solicitud ha sido enviada con éxito para aprobación del jefe inmediato (${solicitud.correo_jefe_inmediato}).</p>`
-        );
+    // Correo al equipo de desarrollo (desarrollo@merkahorrosas.com)
+    const developmentEmailBody = `
+      <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Nueva Solicitud de Desarrollo Recibida</h2>
+        <p><strong>Código:</strong> ${solicitud.codigo_requerimiento}</p>
+        <p><strong>Solicitante:</strong> ${solicitud.nombre_completo} (${solicitud.correo_electronico})</p>
+        <p><strong>Área:</strong> ${solicitud.area_proceso}</p>
+        <p><strong>Proyecto:</strong> ${solicitud.nombre_proyecto}</p>
+        <p><strong>Objetivo:</strong> ${solicitud.objetivo_justificacion}</p>
+        <p><strong>Descripción:</strong> ${solicitud.descripcion_requerimiento}</p>
+        <p><strong>Prioridad:</strong> ${solicitud.prioridad}</p>
+        <p><strong>Jefe Inmediato:</strong> ${solicitud.correo_jefe_inmediato}</p>
+        ${solicitud.archivos_adjuntos.length > 0 ? `
+          <p><strong>Archivos Adjuntos:</strong></p>
+          <ul>
+            ${solicitud.archivos_adjuntos.map(file => `<li><a href="${file.url}">${file.nombre}</a></li>`).join('')}
+          </ul>
+        ` : ''}
+        <p>Esta solicitud está pendiente de aprobación por el jefe inmediato.</p>
+      </div>
+    `;
 
+    await sendEmail(
+      'desarrollo@merkahorrosas.com',
+      `[DS] Nueva Solicitud: ${solicitud.codigo_requerimiento}`,
+      developmentEmailBody
+    );
 
-        res.status(200).json({ success: true, message: 'Solicitud notificada correctamente y correos enviados.' });
-    } catch (error) {
-        console.error('Error al procesar solicitud:', error);
-        res.status(500).json({ success: false, message: 'Fallo interno del servidor.', error: error.message });
-    }
+    // Correo al jefe inmediato con enlaces de aprobación/rechazo
+    const approvalEmailBody = `
+      <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Aprobación Requerida: Solicitud ${solicitud.codigo_requerimiento}</h2>
+        <p><strong>Solicitante:</strong> ${solicitud.nombre_completo}</p>
+        <p><strong>Proyecto:</strong> ${solicitud.nombre_proyecto}</p>
+        <p><strong>Descripción:</strong> ${solicitud.descripcion_requerimiento}</p>
+        <p><strong>Prioridad:</strong> ${solicitud.prioridad}</p>
+        <p>Por favor, revisa la solicitud y decide si aprobar o rechazar:</p>
+        <p>
+          <a href="${baseURL}/api/solicitudes/aprobar-rechazar?code=${solicitud.codigo_requerimiento}&action=approve&token=${solicitud.token}" 
+             style="background-color: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">
+            Aprobar
+          </a>
+          <a href="${baseURL}/api/solicitudes/aprobar-rechazar?code=${solicitud.codigo_requerimiento}&action=reject&token=${solicitud.token}" 
+             style="background-color: #dc3545; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+            Rechazar
+          </a>
+        </p>
+        ${solicitud.archivos_adjuntos.length > 0 ? `
+          <p><strong>Archivos Adjuntos:</strong></p>
+          <ul>
+            ${solicitud.archivos_adjuntos.map(file => `<li><a href="${file.url}">${file.nombre}</a></li>`).join('')}
+          </ul>
+        ` : ''}
+      </div>
+    `;
+
+    await sendEmail(
+      solicitud.correo_jefe_inmediato,
+      `[DS] Aprobación Requerida: ${solicitud.codigo_requerimiento}`,
+      approvalEmailBody
+    );
+
+    // Correo de confirmación al solicitante
+    await sendEmail(
+      solicitud.correo_electronico,
+      `[DS] Confirmación de Envío: ${solicitud.codigo_requerimiento}`,
+      `
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+          <h2>Confirmación de Solicitud Enviada</h2>
+          <p>Tu solicitud <strong>${solicitud.codigo_requerimiento}</strong> ha sido enviada con éxito.</p>
+          <p>Se ha notificado al jefe inmediato (${solicitud.correo_jefe_inmediato}) para su aprobación.</p>
+          <p>Recibirás una notificación una vez que se tome una decisión.</p>
+        </div>
+      `
+    );
+
+    res.status(200).json({ success: true, message: 'Solicitud notificada correctamente y correos enviados.' });
+  } catch (error) {
+    console.error('Error al procesar solicitud:', error);
+    res.status(500).json({ success: false, message: 'Fallo interno del servidor.', error: error.message });
+  }
 };
 
+export const procesarDecision = async (req, res) => {
+  const { token, codigo, decision, observacion } = req.body;
+
+  if (!token || !codigo || !decision) {
+    return res.status(400).json({ success: false, message: 'Faltan parámetros requeridos: token, código o decisión.' });
+  }
+
+  if (!['Aprobada - Pendiente de Análisis', 'Rechazada'].includes(decision)) {
+    return res.status(400).json({ success: false, message: 'Decisión inválida.' });
+  }
+
+  try {
+    // 1. Validar el token y obtener la solicitud
+    const { data: solicitud, error: fetchError } = await supabase
+      .from('solicitudes_desarrollo')
+      .select('*')
+      .eq('codigo_requerimiento', codigo)
+      .eq('token', token)
+      .single();
+
+    if (fetchError || !solicitud) {
+      return res.status(400).json({ success: false, message: 'Solicitud no encontrada o token inválido.' });
+    }
+
+    // 2. Verificar que la solicitud esté pendiente de aprobación
+    if (solicitud.estado !== 'Pendiente de Aprobación') {
+      return res.status(400).json({ success: false, message: 'La solicitud ya ha sido procesada.' });
+    }
+
+    // 3. Actualizar el estado de la solicitud
+    const { error: updateError } = await supabase
+      .from('solicitudes_desarrollo')
+      .update({
+        estado: decision,
+        observacion_decision: observacion || null,
+        fecha_decision: new Date().toISOString()
+      })
+      .eq('codigo_requerimiento', codigo)
+      .eq('token', token);
+
+    if (updateError) throw updateError;
+
+    // 4. Enviar notificaciones
+    const notificationBody = `
+      <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Solicitud ${codigo} ${decision === 'Aprobada - Pendiente de Análisis' ? 'Aprobada' : 'Rechazada'}</h2>
+        <p><strong>Solicitante:</strong> ${solicitud.nombre_completo}</p>
+        <p><strong>Proyecto:</strong> ${solicitud.nombre_proyecto}</p>
+        <p><strong>Estado:</strong> ${decision}</p>
+        ${observacion ? `<p><strong>Observación:</strong> ${observacion}</p>` : ''}
+        <p>Fecha de decisión: ${new Date().toLocaleString('es-CO')}</p>
+      </div>
+    `;
+
+    // Notificar al solicitante y al equipo de desarrollo
+    await Promise.all([
+      sendEmail(
+        solicitud.correo_electronico,
+        `[DS] Decisión sobre Solicitud: ${codigo}`,
+        notificationBody
+      ),
+      sendEmail(
+        'desarrollo@merkahorrosas.com',
+        `[DS] Decisión sobre Solicitud: ${codigo}`,
+        notificationBody
+      )
+    ]);
+
+    res.status(200).json({
+      success: true,
+      message: `Solicitud ${codigo} ${decision === 'Aprobada - Pendiente de Análisis' ? 'aprobada' : 'rechazada'} con éxito.`
+    });
+  } catch (error) {
+    console.error('Error al procesar la decisión:', error);
+    res.status(500).json({ success: false, message: 'Error interno del servidor.', error: error.message });
+  }
+};
 /**
  * GET /api/solicitudes/approve?code=XXX&action=approve/reject
  * Maneja el clic del jefe inmediato para aprobar o rechazar la solicitud.
