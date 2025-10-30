@@ -697,28 +697,29 @@ export const aprobarRechazarSolicitud = async (req, res) => {
     }
 };
 
-// 1. OBTENER TODOS LOS DATOS PARA EL DASHBOARD (ACTUALIZADO CON SPRINTS)
+// 1. OBTENER TODOS LOS DATOS PARA EL DASHBOARD (✅ CORREGIDO: FILTRAR ARCHIVADAS)
 export const getDashboardData = async (req, res) => {
     try {
         const { data: solicitudes, error: reqError } = await supabase
             .from('solicitudes_desarrollo')
-            // Aseguramos que se seleccionan todas las columnas de gestión
             .select('*, responsable_asignado, prioridad_asignada, observaciones_ds') 
             .order('fecha_creacion', { ascending: false });
 
         if (reqError) throw reqError;
 
+        // ✅ CAMBIO CRÍTICO: Filtrar tareas archivadas
         const { data: actividades, error: actError } = await supabase
             .from('actividades_ds')
             .select(`
                 *, 
                 sprint:sprints_desarrollo(id, nombre, estado)
             `)
+            .or('archivado.is.null,archivado.eq.false') // 🔑 FILTRAR SOLO NO ARCHIVADAS
             .order('fecha_creacion', { ascending: true });
 
         if (actError) throw actError;
 
-        // 🆕 OBTENER SPRINTS
+        // Obtener sprints (sin cambios)
         const { data: sprints, error: sprintsError } = await supabase
             .from('sprints_desarrollo')
             .select('*')
@@ -1461,16 +1462,41 @@ export const toggleArchivarTarea = async (req, res) => {
     }
 
     try {
-        // Obtener la tarea actual
+        // ✅ PASO 1: Verificar si la columna 'archivado' existe en la tabla
+        const { data: columnsCheck, error: columnsError } = await supabase
+            .from('actividades_ds')
+            .select('archivado')
+            .limit(1);
+
+        // Si hay error y menciona que la columna no existe
+        if (columnsError && columnsError.message.includes('column')) {
+            console.error('❌ La columna "archivado" NO existe en la tabla actividades_ds');
+            return res.status(500).json({
+                success: false,
+                message: 'La funcionalidad de archivado requiere una actualización de la base de datos.',
+                requiresDBUpdate: true,
+                sqlCommand: `
+-- Ejecuta este SQL en tu dashboard de Supabase:
+ALTER TABLE actividades_ds ADD COLUMN archivado BOOLEAN DEFAULT FALSE;
+ALTER TABLE actividades_ds ADD COLUMN fecha_archivado TIMESTAMPTZ;
+CREATE INDEX idx_actividades_archivado ON actividades_ds(archivado);
+                `.trim()
+            });
+        }
+
+        // ✅ PASO 2: Obtener la tarea actual
         const { data: currentTask, error: fetchError } = await supabase
             .from('actividades_ds')
             .select('nombre_actividad, estado_actividad, archivado')
             .eq('id', taskId)
             .single();
 
-        if (fetchError) throw fetchError;
+        if (fetchError) {
+            console.error('❌ Error al obtener tarea:', fetchError);
+            throw fetchError;
+        }
 
-        // Validar que solo se puedan archivar tareas terminadas
+        // ✅ PASO 3: Validar que solo se puedan archivar tareas terminadas
         if (archivar && currentTask.estado_actividad !== 'Terminado') {
             return res.status(400).json({ 
                 success: false, 
@@ -1478,7 +1504,7 @@ export const toggleArchivarTarea = async (req, res) => {
             });
         }
 
-        // Actualizar el estado de archivado
+        // ✅ PASO 4: Actualizar el estado de archivado
         const updateData = {
             archivado: archivar,
             fecha_archivado: archivar ? new Date().toISOString() : null
@@ -1491,10 +1517,13 @@ export const toggleArchivarTarea = async (req, res) => {
             .select()
             .single();
 
-        if (updateError) throw updateError;
+        if (updateError) {
+            console.error('❌ Error al actualizar:', updateError);
+            throw updateError;
+        }
 
         const action = archivar ? 'archivada' : 'desarchivada';
-        console.log(`📦 Tarea ${action}: ${currentTask.nombre_actividad}`);
+        console.log(`✅ Tarea ${action}: ${currentTask.nombre_actividad} (ID: ${taskId})`);
 
         res.status(200).json({ 
             success: true, 
@@ -1503,7 +1532,7 @@ export const toggleArchivarTarea = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error al cambiar estado de archivo:', error);
+        console.error('❌ Error en toggleArchivarTarea:', error);
         res.status(500).json({ 
             success: false, 
             message: 'Error al procesar la solicitud', 
