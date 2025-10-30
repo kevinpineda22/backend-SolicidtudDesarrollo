@@ -1,15 +1,34 @@
 // routes/solicitudRoutes.js
 import express from 'express';
+
+// Importar desde controladores específicos
 import { 
-    notificarSolicitud, aprobarRechazarSolicitud, 
-    getDashboardData, updateSolicitudField, 
-    addKanbanTask, updateKanbanTaskStatus, getSolicitudProgress,
-    deleteKanbanTask, // 🆕 NUEVA IMPORTACIÓN
-    toggleArchivarTarea, getArchivedTasks, // 🆕 IMPORTACIONES PARA ARCHIVADO
-    // 🆕 IMPORTACIONES PARA SPRINTS
-    createSprint, updateSprint, deleteSprint, getSprintById, getAllSprints,
-    procesarDecision
-} from '../controllers/solicitudController.js';
+    notificarSolicitud, 
+    aprobarRechazarSolicitud, 
+    procesarDecision 
+} from '../controllers/notificacionController.js';
+
+import { 
+    getDashboardData, 
+    updateSolicitudField, 
+    getSolicitudProgress 
+} from '../controllers/solicitudesController.js';
+
+import { 
+    addKanbanTask, 
+    updateKanbanTaskStatus, 
+    deleteKanbanTask,
+    toggleArchivarTarea, 
+    getArchivedTasks 
+} from '../controllers/actividadesController.js';
+
+import { 
+    createSprint, 
+    updateSprint, 
+    deleteSprint, 
+    getSprintById, 
+    getAllSprints 
+} from '../controllers/sprintsController.js';
 
 const router = express.Router();
 
