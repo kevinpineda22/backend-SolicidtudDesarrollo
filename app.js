@@ -2,21 +2,43 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import supabase from './supabaseCliente.js';
 import solicitudRoutes from './routes/solicitudRoutes.js'; 
 
 
 dotenv.config();
 
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://merkahorro.com',
+  'https://www.merkahorro.com',
+];
 
 const app = express();
 
-// Configurar CORS para permitir solicitudes desde el frontend
 app.use(cors({
-  origin: '*',  // Permite todas las solicitudes de cualquier origen
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],  // Métodos permitidos
-  allowedHeaders: ['Content-Type', 'Authorization'],  // Cabeceras permitidas
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      return callback(new Error('CORS no permitido'), false);
+    }
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
 }));
+
+// Rate limiting global
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Demasiadas solicitudes, intenta más tarde.' },
+});
+app.use(globalLimiter);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
